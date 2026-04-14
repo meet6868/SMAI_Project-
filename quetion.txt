@@ -1,0 +1,31 @@
+Voter ID / EPIC assistant
+
+What you will hand in
+1. GitHub repository. Public, with README.md, requirements.txt, training notebook, app
+code.
+2. Live demo. Deployed on HuggingFace Spaces (free) or Streamlit Community Cloud (free).
+If hosting fails, a recorded ≤2-minute screen demo is acceptable.
+3. Technical report (PDF). Sections: Introduction, Data, Method, Results, Limitations,
+References. Include an Ablation section where necessary.
+4. One-slide pitch. Single PNG/PDF you could post on LinkedIn.
+
+
+The problem. Indian government services (voter ID) have lots of
+public PDF documentation. Build a chatbot that answers “how do I apply for X” by retrieving
+from official PDFs.
+Why this is the easiest theme. No model training at all. You build a RAG (Retrieval-
+Augmented Generation) pipeline using free embeddings + a free LLM API.
+What you will build. Streamlit chat (st.chat input). Each answer shows source PDF
+citations. Optional: “Talk in Hindi” toggle.
+Skills. Document parsing, embeddings, vector search, prompt engineering, chat UI.
+Common base.
+• Embeddings: sentence-transformers/all-MiniLM-L6-v2 (free, CPU).
+• Vector store: chromadb or faiss-cpu.
+• LLM: free Google AI Studio (Gemini 1.5 Flash) or Groq (Llama-3 free).
+
+
+Using LLMs (encouraged!)
+You may freely use ChatGPT / Claude / Gemini / Copilot for: data labelling (paste 50 reviews,
+ask for sentiment labels), synthetic data generation, code scaffolding (Streamlit UI, dataset
+loaders), debugging, and report drafting. Honesty rules: (a) cite the LLMs you used in
+Acknowledgements, (b) all evaluation and analysis must be your own.
