@@ -67,6 +67,17 @@ def run_tts(text: str, use_hindi_voice: bool, stop_only: bool = False) -> None:
     )
 
 
+def build_retrieval_query(raw_query: str) -> str:
+    query = (raw_query or "").strip()
+    if not query:
+        return ""
+
+    if re.search(r"\bvoter\s*id\b", query, flags=re.IGNORECASE):
+        return query
+
+    return f"{query} voter id"
+
+
 st.set_page_config(page_title="Voter ID / EPIC Assistant", page_icon="🗳️", layout="wide")
 st.title("Voter ID / EPIC Assistant")
 st.caption("Ask voter service questions grounded in official PDF documents.")
@@ -168,6 +179,7 @@ for msg in st.session_state.messages:
 query = st.chat_input("How do I apply for voter ID?")
 
 if query:
+    retrieval_query = build_retrieval_query(query)
     user_id = f"msg_{len(st.session_state.messages) + 1}"
     st.session_state.messages.append({"id": user_id, "role": "user", "content": query})
     with st.chat_message("user"):
@@ -189,7 +201,7 @@ if query:
             try:
                 with st.spinner("Retrieving context and generating answer..."):
                     result = pipeline.answer(
-                        query=query,
+                        query=retrieval_query,
                         provider=provider,
                         api_key=api_key,
                         top_k=top_k,
