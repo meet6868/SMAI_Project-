@@ -1,0 +1,10 @@
+streamlit
+sentence-transformers
+chromadb
+google-generativeai
+groq
+pypdf
+python-dotenv
+jupyter
+ipykernel
+torchvision
