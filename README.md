@@ -77,3 +77,17 @@ For deployment:
 ## Notes
 - Source documents are taken only from local PDFs in `data/`.
 - Use the "Rebuild PDF Index" button when PDF files are added or changed.
+
+## Streamlit Cloud Secrets
+
+Set secrets in Streamlit Community Cloud under **App settings -> Secrets**:
+
+```toml
+LLM_PROVIDER = "google"
+GOOGLE_API_KEY = "your_google_api_key"
+GROQ_API_KEY = ""
+HINDI_MODE = "false"
+RETRIEVED_CHUNKS = "4"
+```
+
+Do not commit real API keys to the repository. For local development, use `.env` or `.streamlit/secrets.toml`.

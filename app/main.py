@@ -1,8 +1,9 @@
-from pathlib import Path
 import json
 import os
 import re
 import sys
+from pathlib import Path
+from typing import Optional
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -15,6 +16,17 @@ if str(ROOT_DIR) not in sys.path:
 load_dotenv(ROOT_DIR / ".env")
 
 from src.voter_assistant.knowledge_assistant import RAGPipeline
+
+
+def get_secret(name: str) -> Optional[str]:
+    try:
+        value = st.secrets.get(name)
+        if value:
+            return str(value)
+    except Exception:
+        pass
+    value = os.getenv(name)
+    return value if value else None
 
 
 def run_tts(text: str, use_hindi_voice: bool, stop_only: bool = False) -> None:
@@ -82,10 +94,10 @@ st.set_page_config(page_title="Voter ID / EPIC Assistant", page_icon="🗳️", 
 st.title("Voter ID / EPIC Assistant")
 st.caption("Ask voter service questions grounded in official PDF documents.")
 
-provider = os.getenv("LLM_PROVIDER", "google").strip().lower()
-default_hindi_mode = os.getenv("HINDI_MODE", "false").strip().lower() == "true"
+provider = (get_secret("LLM_PROVIDER") or "google").strip().lower()
+default_hindi_mode = (get_secret("HINDI_MODE") or "false").strip().lower() == "true"
 try:
-    top_k = int(os.getenv("RETRIEVED_CHUNKS", "4"))
+    top_k = int(get_secret("RETRIEVED_CHUNKS") or "4")
 except ValueError:
     top_k = 4
 top_k = max(2, min(top_k, 8))
@@ -94,9 +106,9 @@ if provider not in {"google", "groq"}:
     provider = "google"
 
 if provider == "google":
-    api_key = os.getenv("GOOGLE_API_KEY", "").strip()
+    api_key = (get_secret("GOOGLE_API_KEY") or "").strip()
 else:
-    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    api_key = (get_secret("GROQ_API_KEY") or "").strip()
 
 with st.sidebar:
     st.header("System")

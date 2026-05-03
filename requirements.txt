@@ -5,6 +5,4 @@ google-generativeai
 groq
 pypdf
 python-dotenv
-jupyter
-ipykernel
-torchvision
+numpy

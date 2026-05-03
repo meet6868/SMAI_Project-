@@ -10,6 +10,8 @@ import google.generativeai as genai
 from groq import Groq
 from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer
+import numpy as np
+import streamlit as st
 
 
 @dataclass
@@ -41,6 +43,58 @@ def _chunk_text(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
     return chunks
 
 
+def _l2_normalize(vectors: np.ndarray) -> np.ndarray:
+    if vectors.size == 0:
+        return vectors
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    norms = np.where(norms == 0.0, 1.0, norms)
+    return vectors / norms
+
+
+@st.cache_data(show_spinner=False)
+def load_chunk_records(data_dir_str: str, chunk_size: int, chunk_overlap: int) -> List[ChunkRecord]:
+    data_dir = Path(data_dir_str)
+    pdf_files = sorted(data_dir.glob("*.pdf"))
+    records: List[ChunkRecord] = []
+
+    for pdf_path in pdf_files:
+        reader = PdfReader(str(pdf_path))
+        for page_idx, page in enumerate(reader.pages, start=1):
+            raw = page.extract_text() or ""
+            cleaned = _clean_text(raw)
+            if not cleaned:
+                continue
+
+            pieces = _chunk_text(
+                text=cleaned,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+            )
+            for c_idx, text in enumerate(pieces, start=1):
+                cid = f"{pdf_path.name}_p{page_idx}_c{c_idx}"
+                records.append(
+                    ChunkRecord(
+                        chunk_id=cid,
+                        text=text,
+                        source=pdf_path.name,
+                        page=page_idx,
+                        chunk_index=c_idx,
+                    )
+                )
+
+    return records
+
+
+@st.cache_resource(show_spinner=False)
+def get_chroma_client(db_dir_str: str):
+    return chromadb.PersistentClient(path=db_dir_str)
+
+
+@st.cache_resource(show_spinner=False)
+def get_embedder(model_name: str):
+    return SentenceTransformer(model_name)
+
+
 class RAGPipeline:
     def __init__(
         self,
@@ -59,63 +113,63 @@ class RAGPipeline:
         self.chunk_overlap = chunk_overlap
 
         self.db_dir.mkdir(parents=True, exist_ok=True)
-        self.client = chromadb.PersistentClient(path=str(self.db_dir))
-        self.embedder = SentenceTransformer(self.embedding_model_name)
+        self._client = None
+        self._embedder = None
+
+    def _get_client(self):
+        if self._client is None:
+            self._client = get_chroma_client(str(self.db_dir))
+        return self._client
+
+    def _get_embedder(self):
+        if self._embedder is None:
+            self._embedder = get_embedder(self.embedding_model_name)
+        return self._embedder
 
     def _extract_chunks(self) -> List[ChunkRecord]:
-        pdf_files = sorted(self.data_dir.glob("*.pdf"))
-        records: List[ChunkRecord] = []
-
-        for pdf_path in pdf_files:
-            reader = PdfReader(str(pdf_path))
-            for page_idx, page in enumerate(reader.pages, start=1):
-                raw = page.extract_text() or ""
-                cleaned = _clean_text(raw)
-                if not cleaned:
-                    continue
-
-                pieces = _chunk_text(
-                    text=cleaned,
-                    chunk_size=self.chunk_size,
-                    chunk_overlap=self.chunk_overlap,
-                )
-                for c_idx, text in enumerate(pieces, start=1):
-                    cid = f"{pdf_path.name}_p{page_idx}_c{c_idx}"
-                    records.append(
-                        ChunkRecord(
-                            chunk_id=cid,
-                            text=text,
-                            source=pdf_path.name,
-                            page=page_idx,
-                            chunk_index=c_idx,
-                        )
-                    )
-        return records
+        return load_chunk_records(str(self.data_dir), self.chunk_size, self.chunk_overlap)
 
     def _get_or_create_collection(self):
-        return self.client.get_or_create_collection(
-            name=self.collection_name,
-            metadata={"hnsw:space": "cosine"},
-        )
+        client = self._get_client()
+        try:
+            return client.get_or_create_collection(
+                name=self.collection_name,
+                metadata={"hnsw:space": "cosine"},
+            )
+        except Exception:
+            return client.get_or_create_collection(name=self.collection_name)
+
+    def _embed_texts(self, texts: List[str]) -> List[List[float]]:
+        if not texts:
+            return []
+        embedder = self._get_embedder()
+        embeddings = embedder.encode(texts, show_progress_bar=False)
+        vectors = np.asarray(embeddings, dtype=np.float32)
+        vectors = _l2_normalize(vectors)
+        return vectors.tolist()
 
     def build_index(self, force_rebuild: bool = False) -> None:
+        client = self._get_client()
         if force_rebuild:
             try:
-                self.client.delete_collection(name=self.collection_name)
+                client.delete_collection(name=self.collection_name)
             except Exception:
                 pass
 
         collection = self._get_or_create_collection()
 
-        if not force_rebuild and collection.count() > 0:
-            return
+        try:
+            if not force_rebuild and collection.count() > 0:
+                return
+        except Exception:
+            pass
 
         records = self._extract_chunks()
         if not records:
             return
 
         docs = [r.text for r in records]
-        vectors = self.embedder.encode(docs, normalize_embeddings=True).tolist()
+        vectors = self._embed_texts(docs)
 
         collection.upsert(
             ids=[r.chunk_id for r in records],
@@ -131,12 +185,21 @@ class RAGPipeline:
             ],
         )
 
+        try:
+            if hasattr(client, "persist"):
+                client.persist()
+        except Exception:
+            pass
+
     def retrieve(self, query: str, top_k: int = 4) -> List[Dict]:
         collection = self._get_or_create_collection()
-        if collection.count() == 0:
-            return []
+        try:
+            if collection.count() == 0:
+                return []
+        except Exception:
+            pass
 
-        query_embedding = self.embedder.encode([query], normalize_embeddings=True).tolist()[0]
+        query_embedding = self._embed_texts([query])[0]
         result = collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
@@ -152,9 +215,9 @@ class RAGPipeline:
             contexts.append(
                 {
                     "text": doc,
-                    "source": meta["source"],
-                    "page": int(meta["page"]),
-                    "score": float(1 - dist),
+                    "source": meta.get("source", "unknown"),
+                    "page": int(meta.get("page", -1)),
+                    "score": float(1 - dist) if dist is not None else 0.0,
                 }
             )
         return contexts
@@ -201,6 +264,8 @@ class RAGPipeline:
 
     @staticmethod
     def _generate_with_google(api_key: str, prompt: str) -> str:
+        if not api_key:
+            raise RuntimeError("Google API key not provided")
         genai.configure(api_key=api_key)
 
         tried: List[str] = []
@@ -240,6 +305,8 @@ class RAGPipeline:
 
     @staticmethod
     def _generate_with_groq(api_key: str, prompt: str) -> str:
+        if not api_key:
+            raise RuntimeError("Groq API key not provided")
         client = Groq(api_key=api_key)
         completion = client.chat.completions.create(
             model="llama3-8b-8192",
