@@ -15,6 +15,14 @@ if str(ROOT_DIR) not in sys.path:
 
 load_dotenv(ROOT_DIR / ".env")
 
+import sys
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Add project root to path
+sys.path.append(os.path.join(BASE_DIR, ".."))
+
 from src.voter_assistant.knowledge_assistant import RAGPipeline
 
 
